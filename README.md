@@ -1,0 +1,1 @@
+# Manifest2ScaleConfig-BlazorWA
