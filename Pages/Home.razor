@@ -1,0 +1,360 @@
+﻿@page "/"
+@using Manifest2ScaleConfig_BlazorWA.Models
+@using Manifest2ScaleConfig_BlazorWA.Services
+@using Microsoft.AspNetCore.Components.Forms
+@inject XmlService XmlService
+@inject CsvService CsvService
+
+<PageTitle>Manifest2Scale Interface File Editor</PageTitle>
+
+
+<div class="container">
+    <h1>Manifest2Scale Interface File Editor</h1>
+
+    <div class="file-upload">
+        <InputFile OnChange="@HandleFileUpload" multiple accept=".xml,.shxml,.rcxml" />
+    </div>
+
+    @if (!string.IsNullOrEmpty(errorMessage))
+    {
+        <div class="alert alert-danger">@errorMessage</div>
+    }
+
+    <div class="tabs">
+        <button class="@(activeTab == "shipments" ? "active" : "")" @onclick="@(() => activeTab = "shipments")" disabled="@(!hasShipments)">
+            Shipments (@shipments.Count)
+        </button>
+        <button class="@(activeTab == "receipts" ? "active" : "")" @onclick="@(() => activeTab = "receipts")" disabled="@(receipt == null)">
+            Receipts
+        </button>
+    </div>
+
+    @if (activeTab == "shipments" && hasShipments)
+    {
+        <div class="editor-container">
+            <div class="sidebar">
+                <h3>Shipments</h3>
+                <div class="shipment-list">
+                    @foreach (var s in shipments)
+                    {
+                        <div class="@(s == selectedShipment ? "shipment-item active" : "shipment-item")" @onclick="() => SelectShipment(s)">
+                            @s.DisplayName
+                        </div>
+                    }
+                </div>
+            </div>
+
+            @if (selectedShipment != null)
+            {
+                <div class="editor-panel">
+                    <h3>Edit Shipment</h3>
+
+                    <div class="form-group">
+                        <label>Supplier:</label>
+                        <select @bind="selectedSupplier" @bind:after="UpdateShipmentSupplier">
+                            @foreach (var supplier in Supplier.All)
+                            {
+                                <option value="@supplier.Prefix">@supplier.Name</option>
+                            }
+                        </select>
+                    </div>
+
+                    <div class="form-group">
+                        <label>Store Number:</label>
+                        <div style="display: flex; align-items: center; gap: 10px;">
+                            <input type="text" @bind="selectedShipment.Customer" @bind:event="oninput" list="stores" style="max-width: 200px;" maxlength="4" />
+                            <span class="@GetStoreNameClass()">@GetStoreName()</span>
+                        </div>
+                        <small>Leading 0 required for 3 digit store numbers</small>
+                    </div>
+
+                    <div class="form-group">
+                        <label>Order Number:</label>
+                        <input type="text" @bind="selectedShipment.ErpOrder" @bind:event="oninput" @bind:after="UpdateShipmentId"/>
+                    </div>
+
+                    <div class="form-group">
+                        <label>Quantity:</label>
+                        <input type="number" @bind="selectedShipment.Quantity" min="0" />
+                    </div>
+
+                    <div class="form-group">
+                        <label>Shipment ID (read-only):</label>
+                        <input type="text" @bind="selectedShipment.ShipmentId" readonly />
+                    </div>
+
+                    <div class="form-group">
+                        <label>Item (read-only):</label>
+                        <input type="text" @bind="selectedShipment.Item" readonly />
+                    </div>
+
+                    <button class="btn-primary" @onclick="SaveShipments">Save Shipments</button>
+                </div>
+            }
+        </div>
+    }
+
+    @if (activeTab == "receipts" && receipt != null)
+    {
+        <div class="editor-panel">
+            <h3>Edit Receipt/Purchase Order</h3>
+
+            <div class="form-group">
+                <label>Receipt/PO Date:</label>
+                <input type="date" @bind="receiptDate" @bind:after="UpdateReceiptDate" />
+                <small>Changing this date will update IDs automatically</small>
+            </div>
+
+            <div class="form-group">
+                <label>Supplier:</label>
+                <select @bind="selectedReceiptSupplier" @bind:after="UpdateReceiptSupplier">
+                    @foreach (var supplier in Supplier.All)
+                    {
+                        <option value="@supplier.Prefix">@supplier.Name</option>
+                    }
+                </select>
+            </div>
+
+            <div class="form-group">
+                <label>Quantity:</label>
+                <input type="number" @bind="receipt.Quantity" min="0" />
+            </div>
+
+            <div class="form-group">
+                <label>Receipt ID (read-only):</label>
+                <input type="text" @bind="receipt.ReceiptId" readonly />
+            </div>
+
+            <div class="form-group">
+                <label>Purchase Order ID (read-only):</label>
+                <input type="text" @bind="receipt.PurchaseOrderId" readonly />
+            </div>
+
+            <div class="form-group">
+                <label>Item (read-only):</label>
+                <input type="text" @bind="receipt.Item" readonly />
+            </div>
+
+            <button class="btn-primary" @onclick="SaveReceipt">Save Receipt</button>
+        </div>
+    }
+</div>
+
+@code {
+    private List<Shipment> shipments = new();
+    private Receipt? receipt;
+    private Shipment? selectedShipment;
+    private List<Store> stores = new();
+    private string activeTab = "shipments";
+    private bool hasShipments => shipments.Count > 0;
+    private string errorMessage = "";
+    private string selectedSupplier = "CAF";
+    private string selectedReceiptSupplier = "CAF";
+    private DateOnly receiptDate = DateOnly.FromDateTime(DateTime.Now);
+    private string? shipmentsFileName;
+    private string? receiptFileName;
+
+    protected override async Task OnInitializedAsync()
+    {
+        stores = await CsvService.LoadStoresAsync();
+    }
+
+    private async Task HandleFileUpload(InputFileChangeEventArgs e)
+    {
+        errorMessage = "";
+
+        foreach (var file in e.GetMultipleFiles())
+        {
+            try
+            {
+                using var stream = file.OpenReadStream(maxAllowedSize: 10 * 1024 * 1024);
+                using var reader = new StreamReader(stream);
+                var content = await reader.ReadToEndAsync();
+
+                if (file.Name.EndsWith(".shxml") || file.Name.Contains("shipment"))
+                {
+                    shipments = XmlService.LoadShipments(content);
+                    shipmentsFileName = file.Name;
+                    if (shipments.Count > 0)
+                    {
+                        selectedShipment = shipments[0];
+                        var detectedSupplier = XmlService.DetectSupplier(shipments);
+                        selectedSupplier = detectedSupplier.Prefix;
+                        activeTab = "shipments";
+                    }
+                }
+                else if (file.Name.EndsWith(".rcxml") || file.Name.Contains("receipt"))
+                {
+                    receipt = XmlService.LoadReceipt(content);
+                    receiptFileName = file.Name;
+                    receiptDate = DateOnly.FromDateTime(receipt.ReceiptDate);
+                    var detectedSupplier = Supplier.All.FirstOrDefault(s => s.ShipFrom == receipt.ShipFrom) ?? Supplier.AzuraFresh;
+                    selectedReceiptSupplier = detectedSupplier.Prefix;
+                    activeTab = "receipts";
+                }
+            }
+            catch (Exception ex)
+            {
+                errorMessage = $"Error loading {file.Name}: {ex.Message}";
+            }
+        }
+    }
+
+    private void SelectShipment(Shipment shipment)
+    {
+        selectedShipment = shipment;
+    }
+
+    private void UpdateShipmentSupplier()
+    {
+        if (selectedShipment == null) return;
+
+        var supplier = Supplier.All.FirstOrDefault(s => s.Prefix == selectedSupplier) ?? Supplier.AzuraFresh;
+        selectedShipment.Item = supplier.Item;
+        selectedShipment.Category1 = supplier.Item;
+        selectedShipment.OrderType = supplier.Prefix;
+
+        if (selectedShipment.ShipmentId.StartsWith("CAF-") && supplier.Prefix != "CAF")
+        {
+            selectedShipment.ShipmentId = selectedShipment.ShipmentId.Replace("CAF-", supplier.Prefix + "-");
+        }
+        else if (selectedShipment.ShipmentId.StartsWith("CTG-") && supplier.Prefix != "CTG")
+        {
+            selectedShipment.ShipmentId = selectedShipment.ShipmentId.Replace("CTG-", supplier.Prefix + "-");
+        }
+    }
+
+    private void UpdateReceiptSupplier()
+    {
+        if (receipt == null) return;
+
+        var supplier = Supplier.All.FirstOrDefault(s => s.Prefix == selectedReceiptSupplier) ?? Supplier.AzuraFresh;
+        receipt.ShipFrom = supplier.ShipFrom;
+        receipt.ShipFromName = supplier.Name;
+        receipt.Item = supplier.Item;
+
+        if (receipt.PurchaseOrder != null)
+        {
+            receipt.PurchaseOrder.ShipFrom = supplier.ShipFrom;
+            receipt.PurchaseOrder.ShipFromName = supplier.Name;
+            receipt.PurchaseOrder.Item = supplier.Item;
+        }
+    }
+
+    private void UpdateReceiptDate()
+    {
+        if (receipt == null) return;
+
+        var newDate = receiptDate.ToDateTime(TimeOnly.MinValue);
+        receipt.ReceiptDate = newDate;
+
+        var supplier = Supplier.All.FirstOrDefault(s => s.Prefix == selectedReceiptSupplier) ?? Supplier.AzuraFresh;
+        var dateStr = newDate.ToString("ddMMyyyy");
+        var newId = $"{supplier.Prefix}/{dateStr}";
+
+        receipt.ReceiptId = newId;
+        receipt.PurchaseOrderId = newId;
+        receipt.UserDef6 = newId;
+
+        var userDefDate = $"0{newDate:yyyyMMdd}";
+        receipt.UserDef7 = userDefDate;
+        receipt.UserDef8 = userDefDate;
+
+        if (receipt.PurchaseOrder != null)
+        {
+            receipt.PurchaseOrder.PurchaseOrderId = newId;
+            receipt.PurchaseOrder.UserDef7 = userDefDate;
+            receipt.PurchaseOrder.UserDef8 = userDefDate;
+        }
+    }
+
+    private void SaveShipments()
+    {
+        var invalidStores = shipments
+            .Where(s => !CsvService.IsValidStore(s.Customer, stores))
+            .Select(s => s.Customer)
+            .Distinct()
+            .ToList();
+
+        if (invalidStores.Count > 0)
+        {
+            var proceed = confirm($"Invalid store numbers: {string.Join(", ", invalidStores)}\nSave anyway?");
+            if (!proceed) return;
+        }
+
+        var xml = XmlService.SaveShipments(shipments);
+        var newShipmentFileName = BuildNewShipmentFileName(receipt!);
+        DownloadFile(xml, newShipmentFileName ?? "shipments.shxml", "application/xml");
+    }
+
+    private void SaveReceipt()
+    {
+        if (receipt == null) return;
+
+        var xml = XmlService.SaveReceipt(receipt);
+        var newReceiptFileName = BuildNewReceiptFileName(receipt!);
+        DownloadFile(xml, newReceiptFileName ?? "receipt.rcxml", "application/xml");
+    }
+
+    private void DownloadFile(string content, string fileName, string contentType)
+    {
+        var bytes = System.Text.Encoding.UTF8.GetBytes(content);
+        var base64 = Convert.ToBase64String(bytes);
+        var dataUrl = $"data:{contentType};base64,{base64}";
+        
+        // JavaScript interop to download file
+        _ = JSRuntime.InvokeVoidAsync("downloadFile", dataUrl, fileName);
+    }
+
+    private string BuildNewReceiptFileName(Receipt receipt)
+    {
+        //File name format: PER-CO-CAF_[Vendor_name]_Receipt-[VendorPrefix]-[DDMMYYYY].rcxml
+        var dateStr = receipt.ReceiptDate.ToString("ddMMyyyy");
+        var supplier = Supplier.All.FirstOrDefault(s => s.Prefix == selectedReceiptSupplier) ?? Supplier.AzuraFresh;
+        var fileName = $"PER-CO-CAF_{supplier.FileName}_Receipt-{supplier.Prefix}-{dateStr}.rcxml";
+        return fileName;
+    }
+    
+    private string BuildNewShipmentFileName(Receipt receipt)
+    {
+        //File name format: PER-CO-CAF_[Vendor_name]_Shipments-[VendorPrefix]-[DDMMYYYY].shxml
+        var dateStr = receipt.ReceiptDate.ToString("ddMMyyyy");
+        var supplier = Supplier.All.FirstOrDefault(s => s.Prefix == selectedReceiptSupplier) ?? Supplier.AzuraFresh;
+        var fileName = $"PER-CO-CAF_{supplier.FileName}_Shipments-{supplier.Prefix}-{dateStr}.shxml";
+        return fileName;
+    }
+
+    [Inject]
+    private IJSRuntime JSRuntime { get; set; } = default!;
+
+    private bool confirm(string message)
+    {
+        // For now, always return true
+        // You can implement proper confirmation with JS interop
+        return true;
+    }
+    
+    private void UpdateShipmentId()
+    {
+        if (selectedShipment == null || string.IsNullOrEmpty(selectedShipment.ErpOrder)) return;
+
+        var supplier = Supplier.All.FirstOrDefault(s => s.Prefix == selectedSupplier) ?? Supplier.AzuraFresh;
+        selectedShipment.ShipmentId = $"{supplier.Prefix}-{selectedShipment.ErpOrder}";
+    }
+    
+    private string GetStoreName()
+    {
+        if (selectedShipment == null || string.IsNullOrWhiteSpace(selectedShipment.Customer))
+            return "";
+        
+        
+        var store = stores.FirstOrDefault(s => s.StoreNumber.Equals(selectedShipment.Customer, StringComparison.OrdinalIgnoreCase));
+        return store != null ? store.StoreName : "⚠️ Unknown Store";
+    }
+    
+    private string GetStoreNameClass()
+    {
+        var isValid = stores.Any(s => s.StoreNumber.Equals(selectedShipment.Customer, StringComparison.OrdinalIgnoreCase));
+        return isValid ? "store-name valid" : "store-name invalid";
+    }
+}
