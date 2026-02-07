@@ -282,11 +282,11 @@
 
         var newDate = shipmentDate.ToDateTime(TimeOnly.MinValue);
 
-        for(shipment in shipments)
+        foreach(Shipment ship in shipments)
         {
-            shipment.OrderDate = newDate;
-            shipment.PlannedShipDate = newDate;
-            shipment.ScheduledShipDate = newDate;
+            ship.OrderDate = newDate;
+            ship.PlannedShipDate = newDate;
+            ship.ScheduledShipDate = newDate;
         }
 
     }
