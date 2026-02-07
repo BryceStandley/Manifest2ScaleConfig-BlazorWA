@@ -306,7 +306,7 @@
         }
 
         var xml = XmlService.SaveShipments(shipments);
-        var newShipmentFileName = BuildNewShipmentFileName(receipt!);
+        var newShipmentFileName = BuildNewShipmentFileName(selectedShipment);
         DownloadFile(xml, newShipmentFileName ?? "shipments.shxml", "application/xml");
     }
 
@@ -338,10 +338,10 @@
         return fileName;
     }
     
-    private string BuildNewShipmentFileName(Receipt receipt)
+    private string BuildNewShipmentFileName(Shipment shipment)
     {
         //File name format: PER-CO-CAF_[Vendor_name]_Shipments-[VendorPrefix]-[DDMMYYYY].shxml
-        var dateStr = receipt.ReceiptDate.ToString("ddMMyyyy");
+        var dateStr = shipment.OrderDate.ToString("ddMMyyyy");
         var supplier = Supplier.All.FirstOrDefault(s => s.Prefix == selectedReceiptSupplier) ?? Supplier.AzuraFresh;
         var fileName = $"PER-CO-CAF_{supplier.FileName}_Shipments-{supplier.Prefix}-{dateStr}.shxml";
         return fileName;
