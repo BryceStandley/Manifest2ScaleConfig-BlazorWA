@@ -60,6 +60,13 @@
                     </div>
 
                     <div class="form-group">
+                        <label>Shipment Date:</label>
+                        <input type="date" @bind="shipmentDate" @bind:after="UpdateShipmentDates" />
+                        <small>Changing this date will update all shipments loaded automatically</small>
+                    </div>
+
+
+                    <div class="form-group">
                         <label>Store Number:</label>
                         <div style="display: flex; align-items: center; gap: 10px;">
                             <input type="text" @bind="selectedShipment.Customer" @bind:event="oninput" list="stores" style="max-width: 200px;" maxlength="4" />
@@ -144,6 +151,7 @@
     private List<Shipment> shipments = new();
     private Receipt? receipt;
     private Shipment? selectedShipment;
+    private DateOnly shipmentDate = DateOnly.FromDateTime(DateTime.Now);
     private List<Store> stores = new();
     private string activeTab = "shipments";
     private bool hasShipments => shipments.Count > 0;
@@ -266,6 +274,21 @@
             receipt.PurchaseOrder.UserDef7 = userDefDate;
             receipt.PurchaseOrder.UserDef8 = userDefDate;
         }
+    }
+
+        private void UpdateShipmentDates()
+    {
+        if (selectedShipment == null) return;
+
+        var newDate = shipmentDate.ToDateTime(TimeOnly.MinValue);
+
+        for(shipment in shipments)
+        {
+            shipment.OrderDate = newDate;
+            shipment.PlannedShipDate = newDate;
+            shipment.ScheduledShipDate = newDate;
+        }
+
     }
 
     private void SaveShipments()
