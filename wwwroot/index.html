@@ -32,6 +32,11 @@
             link.download = fileName;
             link.click();
         };
+        window.scrollToElement = (element) => {
+            if (element) {
+                element.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+            }
+        };
     </script>
 </body>
 

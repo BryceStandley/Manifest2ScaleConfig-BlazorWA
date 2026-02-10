@@ -13,6 +13,10 @@
 
     <div class="file-upload">
         <InputFile OnChange="@HandleFileUpload" multiple accept=".xml,.shxml,.rcxml" />
+        <div style="margin-top: 10px; display: flex; gap: 10px;">
+            <button class="btn-secondary" @onclick="CreateNewShipmentFile">New Shipment File</button>
+            <button class="btn-secondary" @onclick="CreateNewReceiptFile">New Receipt File</button>
+        </div>
     </div>
 
     @if (!string.IsNullOrEmpty(errorMessage))
@@ -33,11 +37,11 @@
     {
         <div class="editor-container">
             <div class="sidebar">
-                <h3>Shipments</h3>
+                <button class="btn-add" @onclick="AddNewShipment">+ Add Shipment</button>
                 <div class="shipment-list">
                     @foreach (var s in shipments)
                     {
-                        <div class="@(s == selectedShipment ? "shipment-item active" : "shipment-item")" @onclick="() => SelectShipment(s)">
+                        <div class="@(s == selectedShipment ? "shipment-item active" : "shipment-item")" @onclick="() => SelectShipment(s)" @ref="selectedShipmentElement">
                             @s.DisplayName
                         </div>
                     }
@@ -161,7 +165,9 @@
     private DateOnly receiptDate = DateOnly.FromDateTime(DateTime.Now);
     private string? shipmentsFileName;
     private string? receiptFileName;
-
+    private ElementReference selectedShipmentElement;
+    
+    
     protected override async Task OnInitializedAsync()
     {
         stores = await CsvService.LoadStoresAsync();
@@ -207,6 +213,34 @@
             }
         }
     }
+    
+    private async Task AddNewShipment()
+    {
+        var supplier = Supplier.All.FirstOrDefault(s => s.Prefix == selectedSupplier) ?? Supplier.AzuraFresh;
+        var newDate = shipmentDate.ToDateTime(TimeOnly.MinValue);
+    
+        var newShipment = new Shipment
+        {
+            CreationDateTimeStamp = DateTime.Now,
+            OrderDate = newDate,
+            PlannedShipDate = newDate,
+            ScheduledShipDate = newDate,
+            Item = supplier.Item,
+            Category1 = supplier.Item,
+            OrderType = supplier.Prefix,
+            Company = "PER-CO-CAF",
+            Quantity = 0,
+            Customer = "",
+            ErpOrder = "",
+            ShipmentId = $"{supplier.Prefix}-"
+        };
+    
+        shipments.Add(newShipment);
+        selectedShipment = newShipment;
+    
+        await Task.Delay(50);
+        await JSRuntime.InvokeVoidAsync("scrollToElement", selectedShipmentElement);
+    }
 
     private void SelectShipment(Shipment shipment)
     {
@@ -241,11 +275,19 @@
         receipt.ShipFromName = supplier.Name;
         receipt.Item = supplier.Item;
 
+        var dateStr = receipt.ReceiptDate.ToString("ddMMyyyy");
+        var newId = $"{supplier.Prefix}/{dateStr}";
+
+        receipt.ReceiptId = newId;
+        receipt.PurchaseOrderId = newId;
+        receipt.UserDef6 = newId;
+
         if (receipt.PurchaseOrder != null)
         {
             receipt.PurchaseOrder.ShipFrom = supplier.ShipFrom;
             receipt.PurchaseOrder.ShipFromName = supplier.Name;
             receipt.PurchaseOrder.Item = supplier.Item;
+            receipt.PurchaseOrder.PurchaseOrderId = newId;
         }
     }
 
@@ -379,5 +421,52 @@
     {
         var isValid = stores.Any(s => s.StoreNumber.Equals(selectedShipment.Customer, StringComparison.OrdinalIgnoreCase));
         return isValid ? "store-name valid" : "store-name invalid";
+    }
+    
+    private void CreateNewShipmentFile()
+    {
+        shipments = new List<Shipment>();
+        shipmentsFileName = null;
+        selectedShipment = null;
+        activeTab = "shipments";
+        AddNewShipment();
+    }
+
+    private void CreateNewReceiptFile()
+    {
+        var supplier = Supplier.All.FirstOrDefault(s => s.Prefix == selectedReceiptSupplier) ?? Supplier.AzuraFresh;
+        var newDate = receiptDate.ToDateTime(TimeOnly.MinValue);
+        var dateStr = newDate.ToString("ddMMyyyy");
+        var newId = $"{supplier.Prefix}/{dateStr}";
+        var userDefDate = $"0{newDate:yyyyMMdd}";
+    
+        receipt = new Receipt
+        {
+            CreationDateTimeStamp = DateTime.Now,
+            ReceiptDate = newDate,
+            ReceiptId = newId,
+            PurchaseOrderId = newId,
+            UserDef6 = newId,
+            UserDef7 = userDefDate,
+            UserDef8 = userDefDate,
+            ShipFrom = supplier.ShipFrom,
+            ShipFromName = supplier.Name,
+            Item = supplier.Item,
+            Quantity = 0,
+            PurchaseOrder = new PurchaseOrder
+            {
+                CreationDateTimeStamp = DateTime.Now,
+                PurchaseOrderId = newId,
+                UserDef7 = userDefDate,
+                UserDef8 = userDefDate,
+                ShipFrom = supplier.ShipFrom,
+                ShipFromName = supplier.Name,
+                Item = supplier.Item,
+                Quantity = 0
+            }
+        };
+    
+        receiptFileName = null;
+        activeTab = "receipts";
     }
 }
