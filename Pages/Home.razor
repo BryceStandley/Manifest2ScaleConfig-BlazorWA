@@ -204,6 +204,7 @@
                     receiptDate = DateOnly.FromDateTime(receipt.ReceiptDate);
                     var detectedSupplier = Supplier.All.FirstOrDefault(s => s.ShipFrom == receipt.ShipFrom) ?? Supplier.AzuraFresh;
                     selectedReceiptSupplier = detectedSupplier.Prefix;
+                    selectedSupplier = detectedSupplier.Prefix;
                     activeTab = "receipts";
                 }
             }
@@ -264,6 +265,9 @@
         {
             selectedShipment.ShipmentId = selectedShipment.ShipmentId.Replace("CTG-", supplier.Prefix + "-");
         }
+
+        selectedSupplier = supplier.Prefix;
+        selectedReceiptSupplier = supplier.Prefix;
     }
 
     private void UpdateReceiptSupplier()
@@ -289,6 +293,8 @@
             receipt.PurchaseOrder.Item = supplier.Item;
             receipt.PurchaseOrder.PurchaseOrderId = newId;
         }
+        selectedReceiptSupplier = supplier.Prefix;
+        selectedSupplier = supplier.Prefix;
     }
 
     private void UpdateReceiptDate()
@@ -318,7 +324,7 @@
         }
     }
 
-        private void UpdateShipmentDates()
+    private void UpdateShipmentDates()
     {
         if (selectedShipment == null) return;
 
@@ -384,7 +390,7 @@
     {
         //File name format: PER-CO-CAF_[Vendor_name]_Shipments-[VendorPrefix]-[DDMMYYYY].shxml
         var dateStr = shipment.OrderDate.ToString("ddMMyyyy");
-        var supplier = Supplier.All.FirstOrDefault(s => s.Prefix == selectedReceiptSupplier) ?? Supplier.AzuraFresh;
+        var supplier = Supplier.All.FirstOrDefault(s => s.Prefix == selectedSupplier) ?? Supplier.AzuraFresh;
         var fileName = $"PER-CO-CAF_{supplier.FileName}_Shipments-{supplier.Prefix}-{dateStr}.shxml";
         return fileName;
     }
